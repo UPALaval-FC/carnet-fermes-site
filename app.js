@@ -1,6 +1,6 @@
 // ============================================================
 // CONFIGURATION DES FERMES
-// Pour changer les noms/animaux, ou ajouter une 4e ferme,
+// Pour changer les noms/animaux, ou ajouter une ferme,
 // modifie seulement cette liste. Le "code" doit être exactement
 // le texte encodé dans le QR code affiché à cette ferme.
 // ============================================================
@@ -26,15 +26,31 @@ const FERMES = [
     logo: "https://www.chateautailleferlafon.ca/wp-content/uploads/brizy/230/assets/images/iW=225&iH=205&oX=0&oY=8&cW=225&cH=189/logo3.png",
     adresse: "1500 Montée Champagne, Laval, QC H7X 4H9",
   },
+  {
+    code: "FERME_4",
+    nom: "Serres Lavoie",
+    animal: "🌸",
+    logo: "https://serreslavoie.com/cdn/shop/files/Logo_Serres_Lavoie_-_2.jpg",
+    adresse: "1470, avenue des Perron, Laval, QC H7H 3C6",
+  },
+  {
+    code: "FERME_5",
+    nom: "Ferme Forget",
+    animal: "🎃",
+    logo: "https://fermeforget.ca/wp-content/uploads/2025/11/la-ferme-forget-logo-rouge-noir-sans-fondombre.png",
+    adresse: "7901 Av. Marcel-Villeneuve, Laval, QC H7A 0H9",
+  },
 ];
 
-// --- clés localStorage ---
+// Nombre de fermes à visiter pour avoir le droit de participer au tirage
+// (pas besoin de visiter les 5 — 4 suffisent).
+const NB_FERMES_REQUISES = 4;
+
 const CLE_VILLE = "ferme_ville";
 const CLE_VISITES = "ferme_visites";
 const CLE_INSCRIT = "ferme_inscrit";
-const CLE_ATTENTE = "ferme_file_attente"; // requêtes à réessayer si le serveur est injoignable
+const CLE_ATTENTE = "ferme_file_attente";
 
-// --- éléments ---
 const ecrans = {
   ville: document.getElementById("screen-ville"),
   carnet: document.getElementById("screen-carnet"),
@@ -55,17 +71,11 @@ function setVisites(liste) {
   localStorage.setItem(CLE_VISITES, JSON.stringify(liste));
 }
 
-// ============================================================
-// ARRIVÉE DIRECTE VIA UN QR CODE (le QR code contient l'adresse
-// du site + ?ferme=FERME_X, donc le téléphone ouvre le site ET
-// enregistre la visite en un seul scan, sans passer par le
-// scanner intégré à l'application).
-// ============================================================
 function obtenirParamUrl(nom) {
   return new URLSearchParams(window.location.search).get(nom);
 }
 
-let fermeEnAttente = null; // ferme scannée avant même que la ville soit connue
+let fermeEnAttente = null;
 
 function enregistrerVisite(code) {
   const ferme = FERMES.find(f => f.code === code);
@@ -79,9 +89,6 @@ function enregistrerVisite(code) {
   }
 }
 
-// ============================================================
-// ENVOI AU SERVEUR (avec file d'attente si hors-ligne)
-// ============================================================
 async function envoyerAuServeur(chemin, donnees) {
   try {
     const reponse = await fetch(`${API_BASE_URL}${chemin}`, {
@@ -92,8 +99,6 @@ async function envoyerAuServeur(chemin, donnees) {
     if (!reponse.ok) throw new Error("Réponse serveur non-OK");
     return true;
   } catch (err) {
-    // Le serveur est injoignable (mauvais wifi, etc.) : on garde la donnée
-    // en mémoire locale et on réessaiera plus tard.
     const file = JSON.parse(localStorage.getItem(CLE_ATTENTE) || "[]");
     file.push({ chemin, donnees });
     localStorage.setItem(CLE_ATTENTE, JSON.stringify(file));
@@ -112,9 +117,6 @@ async function reessayerFileAttente() {
   localStorage.setItem(CLE_ATTENTE, JSON.stringify(restants));
 }
 
-// ============================================================
-// ÉCRAN 1 : VILLE
-// ============================================================
 const inputVille = document.getElementById("input-ville");
 const erreurVille = document.getElementById("erreur-ville");
 
@@ -135,9 +137,6 @@ document.getElementById("btn-commencer").addEventListener("click", () => {
   afficherCarnet();
 });
 
-// ============================================================
-// ÉCRAN 2 : CARNET
-// ============================================================
 function afficherCarnet() {
   const visites = getVisites();
   const liste = document.getElementById("liste-fermes");
@@ -167,18 +166,15 @@ function afficherCarnet() {
   });
 
   document.getElementById("compteur-texte").textContent =
-    `${visites.length} sur ${FERMES.length} fermes visitées`;
+    `${visites.length} sur ${FERMES.length} fermes visitées (${NB_FERMES_REQUISES} nécessaires pour le tirage)`;
 
   afficherEcran("carnet");
 
-  if (visites.length >= FERMES.length && !localStorage.getItem(CLE_INSCRIT)) {
+  if (visites.length >= NB_FERMES_REQUISES && !localStorage.getItem(CLE_INSCRIT)) {
     setTimeout(() => afficherEcran("inscription"), 600);
   }
 }
 
-// ============================================================
-// ÉCRAN 3 : SCANNER
-// ============================================================
 let lecteurQR = null;
 const messageScanner = document.getElementById("scan-message");
 
@@ -193,7 +189,7 @@ function demarrerScanner() {
     { facingMode: "environment" },
     { fps: 10, qrbox: 240 },
     onScanReussi,
-    () => {} // erreurs de lecture image par image : on les ignore
+    () => {}
   ).catch(() => {
     messageScanner.textContent = "Impossible d'accéder à la caméra. Vérifie les autorisations du navigateur.";
   });
@@ -208,8 +204,6 @@ function arreterScanner() {
 
 function onScanReussi(texteDecode) {
   const texte = texteDecode.trim();
-  // Le QR code peut contenir soit une adresse web (ex. ...?ferme=FERME_1),
-  // soit juste le code brut (ex. FERME_1) — on gère les deux formats.
   let code;
   if (texte.includes("ferme=")) {
     code = new URL(texte).searchParams.get("ferme");
@@ -244,9 +238,6 @@ function onScanReussi(texteDecode) {
   }, 900);
 }
 
-// ============================================================
-// ÉCRAN 4 : INSCRIPTION AU TIRAGE
-// ============================================================
 document.getElementById("btn-inscrire").addEventListener("click", async () => {
   const prenom = document.getElementById("input-prenom").value.trim();
   const nom = document.getElementById("input-nom").value.trim();
@@ -265,24 +256,11 @@ document.getElementById("btn-inscrire").addEventListener("click", async () => {
   afficherEcran("merci");
 });
 
-// ============================================================
-// DÉMARRAGE DE L'APPLICATION
-// ============================================================
 (function demarrer() {
-  if (obtenirParamUrl("reset")) {
-    localStorage.removeItem(CLE_VILLE);
-    localStorage.removeItem(CLE_VISITES);
-    localStorage.removeItem(CLE_INSCRIT);
-    localStorage.removeItem(CLE_ATTENTE);
-    window.history.replaceState({}, "", window.location.pathname);
-  }
-
   reessayerFileAttente();
 
   const fermeUrl = obtenirParamUrl("ferme");
   if (fermeUrl) {
-    // On nettoie l'adresse tout de suite pour qu'un rechargement de page
-    // n'enregistre pas la visite une deuxième fois.
     window.history.replaceState({}, "", window.location.pathname);
   }
 
