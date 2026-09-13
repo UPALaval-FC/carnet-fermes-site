@@ -1,0 +1,304 @@
+// ============================================================
+// CONFIGURATION DES FERMES
+// Pour changer les noms/animaux, ou ajouter une ferme,
+// modifie seulement cette liste. Le "code" doit être exactement
+// le texte encodé dans le QR code affiché à cette ferme.
+// ============================================================
+const FERMES = [
+  {
+    code: "FERME_1",
+    nom: "Ferme Marineau",
+    animal: "🍓",
+    logo: "https://fermemarineau.com/cdn/shop/files/Ferme-Marineau.png?v=1775406006&width=300",
+    adresse: "4356 Boul Dagenais O, Laval QC H7R 1L5",
+  },
+  {
+    code: "FERME_2",
+    nom: "Agneaux de Laval",
+    animal: "🐑",
+    logo: "https://static.wixstatic.com/media/b52002_a6ec16f6b60f4d98938f97a8bb2c602e~mv2.png",
+    adresse: "1055 rue Principale, Sainte-Dorothée, Laval, QC H7X 1C1",
+  },
+  {
+    code: "FERME_3",
+    nom: "Château Taillefer Lafon",
+    animal: "🍇",
+    logo: "https://www.chateautailleferlafon.ca/wp-content/uploads/brizy/230/assets/images/iW=225&iH=205&oX=0&oY=8&cW=225&cH=189/logo3.png",
+    adresse: "1500 Montée Champagne, Laval, QC H7X 4H9",
+  },
+  {
+    code: "FERME_4",
+    nom: "Serres Lavoie",
+    animal: "🌸",
+    logo: "https://serreslavoie.com/cdn/shop/files/Logo_Serres_Lavoie_-_2.jpg",
+    adresse: "1470, avenue des Perron, Laval, QC H7H 3C6",
+  },
+  {
+    code: "FERME_5",
+    nom: "Ferme Forget",
+    animal: "🎃",
+    logo: "https://fermeforget.ca/wp-content/uploads/2025/11/la-ferme-forget-logo-rouge-noir-sans-fondombre.png",
+    adresse: "7901 Av. Marcel-Villeneuve, Laval, QC H7A 0H9",
+  },
+];
+
+// Nombre de fermes à visiter pour avoir le droit de participer au tirage
+// (pas besoin de visiter les 5 — 4 suffisent).
+const NB_FERMES_REQUISES = 4;
+
+const CLE_VILLE = "ferme_ville";
+const CLE_VISITES = "ferme_visites";
+const CLE_INSCRIT = "ferme_inscrit";
+const CLE_ATTENTE = "ferme_file_attente";
+
+const ecrans = {
+  ville: document.getElementById("screen-ville"),
+  carnet: document.getElementById("screen-carnet"),
+  scanner: document.getElementById("screen-scanner"),
+  inscription: document.getElementById("screen-inscription"),
+  merci: document.getElementById("screen-merci"),
+};
+
+function afficherEcran(nom) {
+  Object.values(ecrans).forEach(e => e.classList.add("cache"));
+  ecrans[nom].classList.remove("cache");
+}
+
+function getVisites() {
+  return JSON.parse(localStorage.getItem(CLE_VISITES) || "[]");
+}
+function setVisites(liste) {
+  localStorage.setItem(CLE_VISITES, JSON.stringify(liste));
+}
+
+function obtenirParamUrl(nom) {
+  return new URLSearchParams(window.location.search).get(nom);
+}
+
+// Sur iPhone/iPad, un lien maps.apple.com ouvre l'app Plans nativement,
+// sans demander de permission (contrairement à un lien Google Maps).
+// Sur Android et ailleurs, on garde Google Maps.
+function obtenirLienItineraire(adresse) {
+  const estIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const adresseEncodee = encodeURIComponent(adresse);
+  if (estIOS) {
+    return `https://maps.apple.com/?daddr=${adresseEncodee}`;
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${adresseEncodee}`;
+}
+
+let fermeEnAttente = null;
+
+function enregistrerVisite(code) {
+  const ferme = FERMES.find(f => f.code === code);
+  if (!ferme) return;
+  const visites = getVisites();
+  if (!visites.includes(ferme.code)) {
+    visites.push(ferme.code);
+    setVisites(visites);
+    envoyerAuServeur("/api/visite-ferme", { code: ferme.code });
+    if (navigator.vibrate) navigator.vibrate(120);
+  }
+}
+
+async function envoyerAuServeur(chemin, donnees) {
+  try {
+    const reponse = await fetch(`${API_BASE_URL}${chemin}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(donnees),
+    });
+    if (!reponse.ok) throw new Error("Réponse serveur non-OK");
+    return true;
+  } catch (err) {
+    const file = JSON.parse(localStorage.getItem(CLE_ATTENTE) || "[]");
+    file.push({ chemin, donnees });
+    localStorage.setItem(CLE_ATTENTE, JSON.stringify(file));
+    return false;
+  }
+}
+
+async function reessayerFileAttente() {
+  const file = JSON.parse(localStorage.getItem(CLE_ATTENTE) || "[]");
+  if (file.length === 0) return;
+  const restants = [];
+  for (const item of file) {
+    const ok = await envoyerAuServeur(item.chemin, item.donnees).catch(() => false);
+    if (!ok) restants.push(item);
+  }
+  localStorage.setItem(CLE_ATTENTE, JSON.stringify(restants));
+}
+
+const inputVille = document.getElementById("input-ville");
+const erreurVille = document.getElementById("erreur-ville");
+
+document.getElementById("btn-commencer").addEventListener("click", () => {
+  const ville = inputVille.value.trim();
+  if (ville.length < 2) {
+    erreurVille.textContent = "Écris le nom de ta ville pour continuer 🙂";
+    return;
+  }
+  localStorage.setItem(CLE_VILLE, ville);
+  envoyerAuServeur("/api/ville", { ville });
+
+  if (fermeEnAttente) {
+    enregistrerVisite(fermeEnAttente);
+    fermeEnAttente = null;
+  }
+
+  afficherCarnet();
+});
+
+function afficherCarnet() {
+  const visites = getVisites();
+  const liste = document.getElementById("liste-fermes");
+  liste.innerHTML = "";
+
+  FERMES.forEach(f => {
+    const visitee = visites.includes(f.code);
+    const carte = document.createElement("div");
+    carte.className = "carte-ferme" + (visitee ? " visitee" : "");
+
+    const icone = f.logo
+      ? `<img src="${f.logo}" alt="${f.nom}" class="logo-ferme">`
+      : f.animal;
+
+    const lienMaps = obtenirLienItineraire(f.adresse);
+
+    carte.innerHTML = `
+      <div class="animal-ferme">${icone}</div>
+      <div class="info-ferme">
+        <div class="nom-ferme">${f.nom}</div>
+        <div class="statut-ferme ${visitee ? "ok" : ""}">${visitee ? "Visitée !" : "Pas encore visitée"}</div>
+        <a class="lien-itineraire" href="${lienMaps}" target="_blank" rel="noopener">📍 Itinéraire</a>
+      </div>
+      <div class="coche">${visitee ? "✅" : "⬜"}</div>
+    `;
+    liste.appendChild(carte);
+  });
+
+  document.getElementById("compteur-texte").textContent =
+    `${visites.length} sur ${FERMES.length} fermes visitées (${NB_FERMES_REQUISES} nécessaires pour le tirage)`;
+
+  afficherEcran("carnet");
+
+  if (visites.length >= NB_FERMES_REQUISES && !localStorage.getItem(CLE_INSCRIT)) {
+    setTimeout(() => afficherEcran("inscription"), 600);
+  }
+}
+
+let lecteurQR = null;
+const messageScanner = document.getElementById("scan-message");
+
+document.getElementById("btn-scanner").addEventListener("click", demarrerScanner);
+document.getElementById("btn-fermer-scanner").addEventListener("click", arreterScanner);
+
+function demarrerScanner() {
+  afficherEcran("scanner");
+  messageScanner.textContent = "";
+  lecteurQR = new Html5Qrcode("qr-reader");
+  lecteurQR.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 240 },
+    onScanReussi,
+    () => {}
+  ).catch(() => {
+    messageScanner.textContent = "Impossible d'accéder à la caméra. Vérifie les autorisations du navigateur.";
+  });
+}
+
+function arreterScanner() {
+  if (lecteurQR) {
+    lecteurQR.stop().then(() => lecteurQR.clear()).catch(() => {});
+  }
+  afficherCarnet();
+}
+
+function onScanReussi(texteDecode) {
+  const texte = texteDecode.trim();
+  let code;
+  if (texte.includes("ferme=")) {
+    code = new URL(texte).searchParams.get("ferme");
+  } else {
+    code = texte;
+  }
+  code = (code || "").toUpperCase();
+
+  const ferme = FERMES.find(f => f.code === code);
+
+  if (!ferme) {
+    messageScanner.textContent = "Ce QR code ne correspond à aucune ferme 🤔";
+    return;
+  }
+
+  const visites = getVisites();
+  if (visites.includes(ferme.code)) {
+    messageScanner.textContent = `Tu as déjà visité ${ferme.nom} !`;
+    return;
+  }
+
+  visites.push(ferme.code);
+  setVisites(visites);
+  envoyerAuServeur("/api/visite-ferme", { code: ferme.code });
+  messageScanner.textContent = `${ferme.animal} ${ferme.nom} ajoutée à ton carnet !`;
+
+  if (navigator.vibrate) navigator.vibrate(120);
+
+  setTimeout(() => {
+    if (lecteurQR) lecteurQR.stop().then(() => lecteurQR.clear()).catch(() => {});
+    afficherCarnet();
+  }, 900);
+}
+
+document.getElementById("btn-inscrire").addEventListener("click", async () => {
+  const prenom = document.getElementById("input-prenom").value.trim();
+  const nom = document.getElementById("input-nom").value.trim();
+  const contact = document.getElementById("input-contact").value.trim();
+  const erreur = document.getElementById("erreur-inscription");
+
+  if (!prenom || !nom || !contact) {
+    erreur.textContent = "Remplis tous les champs pour participer au tirage.";
+    return;
+  }
+
+  const ville = localStorage.getItem(CLE_VILLE) || "";
+  await envoyerAuServeur("/api/inscription", { prenom, nom, contact, ville });
+
+  localStorage.setItem(CLE_INSCRIT, "1");
+  afficherEcran("merci");
+});
+
+(function demarrer() {
+  if (obtenirParamUrl("reset")) {
+    localStorage.removeItem(CLE_VILLE);
+    localStorage.removeItem(CLE_VISITES);
+    localStorage.removeItem(CLE_INSCRIT);
+    localStorage.removeItem(CLE_ATTENTE);
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+
+  reessayerFileAttente();
+
+  const fermeUrl = obtenirParamUrl("ferme");
+  if (fermeUrl) {
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+
+  const villeDejaConnue = localStorage.getItem(CLE_VILLE);
+  const dejaInscrit = localStorage.getItem(CLE_INSCRIT);
+
+  if (!villeDejaConnue) {
+    fermeEnAttente = fermeUrl;
+    afficherEcran("ville");
+    return;
+  }
+
+  if (fermeUrl) enregistrerVisite(fermeUrl);
+
+  if (dejaInscrit) {
+    afficherEcran("merci");
+    return;
+  }
+
+  afficherCarnet();
+})();
