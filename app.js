@@ -75,6 +75,18 @@ function obtenirParamUrl(nom) {
   return new URLSearchParams(window.location.search).get(nom);
 }
 
+// Sur iPhone/iPad, un lien maps.apple.com ouvre l'app Plans nativement,
+// sans demander de permission (contrairement à un lien Google Maps).
+// Sur Android et ailleurs, on garde Google Maps.
+function obtenirLienItineraire(adresse) {
+  const estIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const adresseEncodee = encodeURIComponent(adresse);
+  if (estIOS) {
+    return `https://maps.apple.com/?daddr=${adresseEncodee}`;
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${adresseEncodee}`;
+}
+
 let fermeEnAttente = null;
 
 function enregistrerVisite(code) {
@@ -151,7 +163,7 @@ function afficherCarnet() {
       ? `<img src="${f.logo}" alt="${f.nom}" class="logo-ferme">`
       : f.animal;
 
-    const lienMaps = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(f.adresse)}`;
+    const lienMaps = obtenirLienItineraire(f.adresse);
 
     carte.innerHTML = `
       <div class="animal-ferme">${icone}</div>
@@ -257,6 +269,14 @@ document.getElementById("btn-inscrire").addEventListener("click", async () => {
 });
 
 (function demarrer() {
+  if (obtenirParamUrl("reset")) {
+    localStorage.removeItem(CLE_VILLE);
+    localStorage.removeItem(CLE_VISITES);
+    localStorage.removeItem(CLE_INSCRIT);
+    localStorage.removeItem(CLE_ATTENTE);
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+
   reessayerFileAttente();
 
   const fermeUrl = obtenirParamUrl("ferme");
