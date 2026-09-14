@@ -253,16 +253,17 @@ function onScanReussi(texteDecode) {
 document.getElementById("btn-inscrire").addEventListener("click", async () => {
   const prenom = document.getElementById("input-prenom").value.trim();
   const nom = document.getElementById("input-nom").value.trim();
-  const contact = document.getElementById("input-contact").value.trim();
+  const courriel = document.getElementById("input-courriel").value.trim();
+  const telephone = document.getElementById("input-telephone").value.trim();
   const erreur = document.getElementById("erreur-inscription");
 
-  if (!prenom || !nom || !contact) {
+  if (!prenom || !nom || !courriel || !telephone) {
     erreur.textContent = "Remplis tous les champs pour participer au tirage.";
     return;
   }
 
   const ville = localStorage.getItem(CLE_VILLE) || "";
-  await envoyerAuServeur("/api/inscription", { prenom, nom, contact, ville });
+  await envoyerAuServeur("/api/inscription", { prenom, nom, courriel, telephone, ville });
 
   localStorage.setItem(CLE_INSCRIT, "1");
   afficherEcran("merci");
